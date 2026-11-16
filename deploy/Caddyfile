@@ -1,5 +1,9 @@
-# Local reverse proxy for the Bots app, per docs/computer.md § Proxy.
-# Ports are 6800 + SCREEN_BASE + slot (SCREEN_BASE=200 here, so 7001..).
+# Reverse proxy for the app and each Bot's live screen, per docs/computer.md § Proxy.
+# voxl listens on 127.0.0.1 and checks its own token, so the screen route needs no
+# extra login; the app itself keeps botd's Basic auth.
+#
+# The screen port is 6800 + SCREEN_BASE + slot: 6901, 6902, ... by default
+# (SCREEN_BASE=100). Widen the range below if you raise SCREEN_BASE.
 :4788 {
 	@screen path_regexp screen ^/screen/(69\d\d|70\d\d)/
 	handle @screen {

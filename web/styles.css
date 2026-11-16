@@ -93,7 +93,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .avatar { display: block; flex-shrink: 0; }
 
 /* Chat */
-.chat { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }
+.chat { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 360px; }
 .chat-header {
   height: 72px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; position: relative;
@@ -110,7 +110,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 /* A Bot's live screen, beside the chat */
 .app:has(.screen:not([hidden])) .screen-btn { display: none; } /* the panel has its own close button */
-.screen { width: 46%; min-width: 420px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: #111; }
+.screen { flex: 0 1 46%; min-width: 320px; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: #111; }
 .screen[hidden] { display: none; }
 .screen-bar { height: 72px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; }
 .screen-bar span { flex: 1; font-size: 16px; color: #dcdcdc; }
@@ -126,7 +126,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 .messages {
   flex: 1; overflow-y: auto;
-  padding: 18px 80px 140px 80px;
+  padding: 18px clamp(16px, 9%, 80px) 140px;
   display: flex; flex-direction: column; gap: 14px;
 }
 .timestamp { align-self: center; max-width: 760px; width: 100%; text-align: center; color: var(--text-dim); font-size: 14.5px; margin: 6px 0 2px; }
@@ -180,7 +180,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .scroll-down.show { display: grid; }
 
 .composer {
-  position: absolute; left: 80px; right: 80px; bottom: 38px;
+  position: absolute; left: clamp(16px, 9%, 80px); right: clamp(16px, 9%, 80px); bottom: 38px;
   max-width: 1240px; margin: 0 auto;
   display: flex; align-items: center; gap: 10px;
   background: #1c1c1c; border: 1px solid var(--border);
@@ -219,6 +219,13 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .typing .status { margin-left: 8px; font-size: 14.5px; max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .typing .stop { margin-left: 10px; font-size: 13.5px; color: var(--text-dim); border: 1px solid #333; border-radius: 999px; padding: 1px 10px; }
 .typing .stop:hover { color: #fff; border-color: #555; }
+
+/* Narrow desktops: panel plus chat plus sidebar no longer fit, so the screen
+   covers the app (same treatment the phone breakpoint uses). */
+@media (max-width: 1100px) {
+  .screen { position: fixed; inset: 0; z-index: 20; width: 100%; min-width: 0; border-left: 0; }
+}
+
 .msg-row.peer { justify-content: flex-end; }
 .msg-row.peer .bubble { background: #1b2230; border-color: #263247; }
 .bubble .from { font-size: 13px; color: var(--text-dim); margin-bottom: 2px; }
@@ -255,9 +262,11 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 /* Model and effort picker: faint, above the input */
 .model-bar {
-  position: absolute; left: 80px; right: 80px; bottom: 98px; z-index: 1;
-  max-width: 1240px; margin: 0 auto; padding-left: 14px;
+  position: absolute; left: clamp(16px, 9%, 80px); right: clamp(16px, 9%, 80px); bottom: 98px; z-index: 1;
+  max-width: 1240px; margin: 0 auto; padding: 3px 8px 3px 14px;
   display: flex; gap: 2px;
+  /* Opaque: messages scroll underneath it, and text showing through the labels is unreadable. */
+  background: var(--bg-main); border-radius: 10px;
 }
 .model-bar[hidden], .model-bar select[hidden] { display: none; }
 .model-bar select {

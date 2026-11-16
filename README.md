@@ -37,7 +37,7 @@ You message Bots like teammates. They finish work end to end and only ask you wh
 - **Any agent**: Claude Code, Codex, Pi, or oh-my-pi, through one small adapter each.
 - **Approvals** *(soon)*: Bots pause and ask before risky actions.
 
-Also planned: computer use (Bots drive the browser and GUI apps), skills, and Slack.
+Also planned: skills and Slack.
 
 ## How it works
 
@@ -104,7 +104,7 @@ Details: [VM specs](docs/background/grok-bot-computer-specs.md) and [running man
 
 ## Status
 
-Early. Chat with Bots on Claude Code, Codex, or Pi works, with memory, routines, and Bot to Bot. Approvals and computer use are next.
+Early. Chat with Bots on Claude Code, Codex, Pi, or oh-my-pi works, with memory, routines, and Bot to Bot. Approvals are next.
 
 ## License
 
