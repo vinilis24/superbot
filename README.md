@@ -10,7 +10,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-111?style=flat-square" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/built%20in-Rust-e8702e?style=flat-square" alt="Built in Rust">
-  <img src="https://img.shields.io/badge/runs%20on-Claude%20Code%20%7C%20Codex%20%7C%20Pi-3b82f6?style=flat-square" alt="Runs on Claude Code, Codex, Pi">
+  <img src="https://img.shields.io/badge/runs%20on-Claude%20Code%20%7C%20Codex%20%7C%20Pi%20%7C%20oh-my-pi-3b82f6?style=flat-square" alt="Runs on Claude Code, Codex, Pi, oh-my-pi">
   <img src="https://img.shields.io/badge/status-early-4cc06a?style=flat-square" alt="Status: early">
 </p>
 
@@ -34,7 +34,7 @@ You message Bots like teammates. They finish work end to end and only ask you wh
 - **Memory that grows**: Bots save your rules and preferences as plain files. Ask "What do you remember about me?"
 - **Routines**: run a Bot on a schedule. Bots create their own cron jobs.
 - **Bot to Bot**: Bots ask each other for help and pass work along.
-- **Any agent**: Claude Code, Codex, or Pi, through one small adapter each.
+- **Any agent**: Claude Code, Codex, Pi, or oh-my-pi, through one small adapter each.
 - **Approvals** *(soon)*: Bots pause and ask before risky actions.
 
 Also planned: computer use (Bots drive the browser and GUI apps), skills, and Slack.
@@ -78,7 +78,7 @@ Bots run on the coding agent you choose:
 - Claude Code CLI (first)
 - Codex CLI
 - Pi Agent
-- omp
+- oh-my-pi (`omp`)
 - Grok Build *(planned)*
 - Hermes Agent *(planned)*
 
