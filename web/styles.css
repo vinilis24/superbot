@@ -102,15 +102,14 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   display: flex; align-items: center; gap: 10px;
   background: #1f1f1f; padding: 7px 16px 7px 10px; border-radius: 999px; font-size: 17px;
 }
-.share-btn {
+.screen-btn {
   position: absolute; right: 16px;
   background: #1f1f1f; padding: 9px 18px; border-radius: 999px; font-size: 16px;
 }
-.share-btn:hover, .bot-pill:hover { background: #292929; }
+.screen-btn:hover, .bot-pill:hover { background: #292929; }
 
 /* A Bot's live screen, beside the chat */
-.share-btn.screen-btn { right: 108px; }
-.app:has(.screen:not([hidden])) .share-btn { display: none; } /* the panel has its own close button */
+.app:has(.screen:not([hidden])) .screen-btn { display: none; } /* the panel has its own close button */
 .screen { width: 46%; min-width: 420px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: #111; }
 .screen[hidden] { display: none; }
 .screen-bar { height: 72px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; }
@@ -193,10 +192,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   font: inherit; font-size: 17px;
 }
 .composer input::placeholder { color: var(--text-faint); }
-.composer-plus { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #aaa; background: #262626; }
-.composer-mic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #aaa; background: #262626; }
 .composer-voice { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--blue); color: #fff; }
-.composer-plus:hover, .composer-mic:hover { color: #fff; }
 
 /* Branding: one faint line under the composer */
 .footnote { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; font-size: 12.5px; color: #5c5c5c; }
@@ -327,7 +323,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .messages { padding-left: 20px; padding-right: 20px; }
   .composer, .model-bar { left: 20px; right: 20px; }
   .composer input { min-width: 0; }
-  .composer-plus, .composer-mic { display: none; }
   .composer-voice { width: 44px; height: 44px; }
 }
 
@@ -352,7 +347,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .hidden-bots { min-height: 44px; }
   .bot-row { padding-top: 10px; padding-bottom: 10px; }
   .me { min-height: 44px; }
-  .sidebar-bottom .icon-btn { display: none; } /* the Apps grid does nothing yet */
 
   /* Header: back, Bot, Screen. Attach and Share are gone on a phone. */
   .chat-header {
@@ -362,8 +356,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .back-btn { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; }
   .bot-pill { flex: 1; min-width: 0; padding: 6px 12px 6px 8px; }
   .bot-pill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bot-pill .harness, .share-btn { display: none; }
-  .share-btn.screen-btn { display: grid; place-items: center; position: static; width: auto; height: 44px; padding: 0 14px; }
+  .bot-pill .harness { display: none; }
+  .screen-btn { display: grid; place-items: center; position: static; width: auto; height: 44px; padding: 0 14px; }
 
   /* Messages clear the composer, the model bar and the keyboard. */
   .messages { padding: 12px 14px calc(150px + var(--kb, 0px) + env(safe-area-inset-bottom)) 14px; overscroll-behavior-y: contain; }
@@ -387,7 +381,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
     border-radius: 24px; padding: 6px 6px 6px 14px;
   }
   .composer input { font-size: 17px; min-height: 44px; }
-  .composer-plus, .composer-mic { display: none; }
   .composer-voice { width: 48px; height: 48px; }
   .footnote { display: none; }
 
@@ -437,7 +430,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .actions button { width: 44px; height: 44px; }
   .icon-btn, .modal-close { width: 44px; height: 44px; }
   .bot-row, .hidden-bots, .d-item { min-height: 44px; }
-  .share-btn, .d-tabs button, .screen-take { min-height: 44px; }
+  .screen-btn, .d-tabs button, .screen-take { min-height: 44px; }
   /* The pill stays 24px tall; its hit area does not. */
   .switch { position: relative; }
   .switch::after { content: ""; position: absolute; inset: -10px; }
