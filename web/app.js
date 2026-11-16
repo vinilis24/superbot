@@ -181,7 +181,7 @@ function renderChat(keepScroll) {
   if (!b) { $("messages").innerHTML = ""; return; }
   const el = $("messages");
   const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  $("bot-pill").innerHTML = `${avatar(b.color, b.shape, 30)}<span>${esc(b.name)}</span><span class="harness">${esc(b.harness)}</span>`;
+  $("bot-pill").innerHTML = `${avatar(b.color, b.shape, 30)}<span>${esc(b.name)}</span><span class="harness">${esc(HARNESS_NAMES[b.harness] || b.harness)}</span>`;
   $("input").placeholder = `Message ${b.name}`;
   const list = messages[b.id] || [];
   let html = list.map((m, i) => renderMessage(m, list[i - 1])).join("");
