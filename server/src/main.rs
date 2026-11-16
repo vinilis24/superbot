@@ -387,11 +387,17 @@ async fn send_message(State(app): State<AppState>, Path(id): Path<String>, Json(
     let text = v["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or_else(|| bad("Text is required"))?;
     let text: String = text.chars().take(100_000).collect();
     // Answering a choice card: remember which option was picked.
-    if let (Some(mid), Some(opt)) = (v["answer"]["messageId"].as_i64(), v["answer"]["option"].as_u64()) {
-        if let Some(mut q) = app.db.message(mid).filter(|m| m.bot_id == id).and_then(|m| m.question) {
-            q["picked"] = json!(opt);
-            app.db.set_question(mid, &q);
-        }
+    if let (Some(mid), Some(opt)) = (
+        v["answer"]["messageId"].as_i64(),
+        v["answer"]["option"].as_u64(),
+    ) && let Some(mut q) = app
+        .db
+        .message(mid)
+        .filter(|m| m.bot_id == id)
+        .and_then(|m| m.question)
+    {
+        q["picked"] = json!(opt);
+        app.db.set_question(mid, &q);
     }
     // Answering a handoff card the Bot is still waiting on: hand the answer to it directly.
     if let Some(tx) = v["answer"]["messageId"].as_i64().and_then(|mid| app.take_handoff(mid)) {

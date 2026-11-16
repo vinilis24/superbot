@@ -65,16 +65,18 @@ pub struct ModelOption {
 
 /// Model lists, cached for 10 minutes per harness (listing can take a second).
 pub fn models(name: &str) -> Vec<ModelOption> {
-    use std::sync::Mutex;
+    use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, Instant};
-    static CACHE: Mutex<Option<HashMap<String, (Instant, Vec<ModelOption>)>>> = Mutex::new(None);
-    if let Some((at, list)) = CACHE.lock().unwrap().get_or_insert_default().get(name) {
-        if at.elapsed() < Duration::from_secs(600) && !list.is_empty() {
-            return list.clone();
-        }
+    type Cache = Mutex<HashMap<String, (Instant, Vec<ModelOption>)>>;
+    static CACHE: LazyLock<Cache> = LazyLock::new(|| Mutex::new(HashMap::new()));
+    if let Some((at, list)) = CACHE.lock().unwrap().get(name)
+        && at.elapsed() < Duration::from_secs(600)
+        && !list.is_empty()
+    {
+        return list.clone();
     }
     let list = get(name).map(|a| a.models()).unwrap_or_default();
-    CACHE.lock().unwrap().get_or_insert_default().insert(name.into(), (Instant::now(), list.clone()));
+    CACHE.lock().unwrap().insert(name.into(), (Instant::now(), list.clone()));
     list
 }
 
