@@ -50,6 +50,7 @@ Settings are in [.env.example](../.env.example). Keep `botctl` next to `botd`: t
 - Run `botd` as a normal user, not root. Claude Code refuses to skip permissions as root.
 - Run it under systemd with `Restart=always`. It shuts down cleanly on SIGTERM.
 - Put HTTPS in front (e.g. Caddy) and set `AUTH_PASSWORD` and `HOST=0.0.0.0`, or keep `HOST=127.0.0.1` behind the proxy. The browser logs in with any username and that password.
+- Login has no built-in rate limit. Plain Caddy `basic_auth` only checks credentials; it does not slow guessing. Put fail2ban in front (ban on repeated `401`s from the proxy log), or add a Caddy rate-limit plugin. `GET /healthz` is unauthenticated, so do not count it as a login attempt.
 - Proxies must not buffer `/api/events` (it's an SSE stream).
 - Set `TZ` to the user's time zone. Routines use it.
 - Back up `DATA_DIR`. `WORKSPACE_DIR` is the Bots' scratch and files.

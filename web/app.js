@@ -34,12 +34,9 @@ const SHAPES = {
   gear: (k, f) => path(GEAR, k) + f(24, 24, 24, 12),
   heart: (k, f) => path("M24 42L7 25A9.5 9.5 0 0 1 24 13A9.5 9.5 0 0 1 41 25Z", k, 6) + f(24, 25, 22, 11),
 };
-// Shapes from before the robots, so existing Bots keep a similar look.
-const OLD_SHAPES = { round: "waddle", star: "gear", flower: "gear", scallop: "gear", splat: "gear", blob: "pebble", egg: "drop", wide: "bean", triangle: "onigiri", pentagon: "gem", hexagon: "gem" };
-
 // ring: draw a selection outline that follows the shape.
 function avatar(color, shape = "waddle", size = 48, ring = false) {
-  const draw = SHAPES[shape] ?? SHAPES[OLD_SHAPES[shape]] ?? SHAPES.waddle;
+  const draw = SHAPES[shape] ?? SHAPES.waddle;
   const scaled = (k, s) => `<g transform="translate(24 24) scale(${k}) translate(-24 -24)">${s}</g>`;
   const body = draw(color, visor(color));
   return `<svg class="avatar" viewBox="0 0 48 48" width="${size}" height="${size}" style="stroke:none;width:${size}px;height:${size}px;overflow:visible">

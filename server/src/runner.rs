@@ -214,6 +214,9 @@ impl App {
             };
 
             let mut errors: Vec<String> = Vec::new();
+            // Text already shown as normal bubbles, so a failure the harness also
+            // printed as chat text isn't reported twice below.
+            let mut said: Vec<String> = Vec::new();
             let mut replies = 0;
             let id = bot.id.clone();
             adapters::run(adapters::get(&bot.harness).unwrap(), input, abort_rx.clone(), |e| match e {
@@ -229,6 +232,7 @@ impl App {
                 AgentEvent::Text(t) => {
                     self.with_run(&id, |r| r.draft.clear());
                     replies += 1;
+                    said.push(t.clone());
                     self.say(&id, &t, false);
                 }
                 AgentEvent::Tool { name, detail } => {
@@ -244,6 +248,7 @@ impl App {
             let draft = self.state().get_mut(&id).and_then(|s| s.run.take()).map(|r| r.draft).unwrap_or_default();
             if !draft.trim().is_empty() {
                 replies += 1;
+                said.push(draft.clone());
                 self.say(&id, &draft, false);
             }
 
@@ -267,7 +272,13 @@ impl App {
                     let mins = self.cfg.run_timeout.as_secs() / 60;
                     self.say(&id, &format!("I hit the {mins} minute limit for one task and stopped."), true)
                 }
-                _ if !errors.is_empty() => self.say(&id, &errors.join("\n\n"), true),
+                _ if !errors.is_empty() => {
+                    // Some harnesses print the failure as chat text and also exit
+                    // non-zero, which would show the same error twice.
+                    if !errors_already_said(&errors, &said) {
+                        self.say(&id, &errors.join("\n\n"), true);
+                    }
+                }
                 _ if replies == 0 => self.say(&id, "Done.", false),
                 _ => {}
             }
@@ -373,6 +384,15 @@ impl App {
     /// After a restart: queued messages run. Interrupted ones are reported, not
     /// re-run, because re-running could repeat actions like sending an email.
     pub fn recover(self: &Arc<Self>) {
+        for m in self.recover_pending() {
+            self.enqueue(m);
+        }
+    }
+
+    /// Marks interrupted messages and returns the ones still worth running.
+    /// Split from `recover` so the decision stays testable without a runtime.
+    fn recover_pending(&self) -> Vec<Message> {
+        let mut run = Vec::new();
         for m in self.db.pending() {
             if self.db.bot(&m.bot_id).is_none() {
                 continue;
@@ -381,9 +401,10 @@ impl App {
                 self.db.set_status(m.id, "done");
                 self.say(&m.bot_id, "A server restart interrupted me before I finished. Send it again if you still need it.", true);
             } else {
-                self.enqueue(m);
+                run.push(m);
             }
         }
+        run
     }
 
     fn system_prompt(&self, bot: &Bot) -> String {
@@ -467,6 +488,17 @@ fn split_question(text: &str) -> (&str, Option<Value>) {
     (&t[..start], Some(json!({ "title": title, "options": options })))
 }
 
+/// True when the run's own chat text already carries every error, compared
+/// loosely (case and whitespace) so a genuinely different error still shows.
+fn errors_already_said(errors: &[String], said: &[String]) -> bool {
+    let norm = |s: &str| s.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
+    let said: Vec<String> = said.iter().map(|s| norm(s)).collect();
+    !errors.is_empty() && errors.iter().all(|e| {
+        let e = norm(e);
+        !e.is_empty() && said.iter().any(|s| s.contains(&e))
+    })
+}
+
 fn tool_label(name: &str, detail: &str) -> String {
     let n = name.to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
@@ -547,6 +579,155 @@ mod tests {
         let (s, cut) = read_capped(p, 100);
         assert!(cut && !s.contains('\u{FFFD}'));
 
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Isolated App with a temp data dir and no screen tools.
+    fn test_app() -> (Arc<App>, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("botd-runner-{}", crate::short_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("botd.db")).unwrap();
+        let cfg = Config {
+            data_dir: dir.join("data"),
+            workspace: dir.join("ws"),
+            user_name: "Tester".into(),
+            bin_dir: dir.join("bin"),
+            api_url: "http://127.0.0.1:1".into(),
+            bot_token: "test-token".into(),
+            run_timeout: Duration::from_secs(60),
+            default_harness: "claude".into(),
+        };
+        (App::new(db, cfg, None), dir)
+    }
+
+    #[test]
+    fn split_question_takes_trailing_block() {
+        let text = "Ready.\n```question\n{\"title\":\"Which one?\",\"options\":[\"First\",\"Second\"]}\n```";
+        let (body, q) = split_question(text);
+        assert_eq!(body.trim(), "Ready.");
+        let q = q.unwrap();
+        assert_eq!(q["title"], json!("Which one?"));
+        assert_eq!(q["options"], json!(["First", "Second"]));
+    }
+
+    #[test]
+    fn split_question_keeps_text_on_bad_or_missing_block() {
+        // Invalid JSON: the whole text stays as-is.
+        let bad = "Hello\n```question\n{not json}\n```";
+        assert_eq!(split_question(bad), (bad, None));
+
+        // No block at all.
+        let plain = "Just a normal reply.";
+        assert_eq!(split_question(plain), (plain, None));
+
+        // Missing closing fence.
+        let open = "Hello\n```question\n{\"title\":\"Q\",\"options\":[\"A\"]}";
+        assert_eq!(split_question(open), (open, None));
+
+        // Valid JSON, but no title/options.
+        let incomplete = "Hello\n```question\n{\"title\":\"Q\"}\n```";
+        assert_eq!(split_question(incomplete), (incomplete, None));
+    }
+
+    #[test]
+    fn split_question_caps_options_at_six() {
+        let opts: Vec<String> = (1..=8).map(|i| format!("\"Option {i}\"")).collect();
+        let text = format!("Pick.\n```question\n{{\"title\":\"Pick\",\"options\":[{}]}}\n```", opts.join(","));
+        let (body, q) = split_question(&text);
+        assert_eq!(body.trim(), "Pick.");
+        let options = q.unwrap()["options"].as_array().unwrap().clone();
+        assert_eq!(options.len(), 6);
+        assert_eq!(options[5], json!("Option 6"));
+    }
+
+    #[test]
+    fn errors_already_said_matches_loosely() {
+        let errors = vec!["Not logged in · Please run /login".to_string()];
+        assert!(errors_already_said(&errors, &["not logged in · please run /login".to_string()]));
+        assert!(errors_already_said(&errors, &["Error: Not logged in · Please run /login\n".to_string()]));
+        assert!(!errors_already_said(&errors, &["Something else".to_string()]));
+        assert!(!errors_already_said(&errors, &[]));
+        assert!(!errors_already_said(&[], &["Anything".to_string()]));
+        // One error shown is not enough when a different one is new.
+        let two = vec!["A failed".to_string(), "B failed".to_string()];
+        assert!(!errors_already_said(&two, &["A failed".to_string()]));
+        assert!(errors_already_said(&two, &["A failed and B failed".to_string()]));
+    }
+
+    #[test]
+    fn stop_marks_queue_done_and_aborts_run() {
+        let (app, dir) = test_app();
+        let bot = app.db.create_bot("Runner", "#fff", "circle", "claude", None, false);
+        let queued = app.db.add_message(&bot.id, "user", "hi", None, false, Some("queued"));
+        let (tx, rx) = watch::channel::<AbortReason>(None);
+        {
+            let mut st = app.state();
+            let s = st.entry(bot.id.clone()).or_default();
+            s.queue.push_back(queued.clone());
+            s.run = Some(Run { abort: tx, status: "Thinking".into(), draft: String::new() });
+        }
+
+        app.stop(&bot.id);
+
+        assert_eq!(app.db.message(queued.id).unwrap().status.as_deref(), Some("done"));
+        assert_eq!(*rx.borrow(), Some("stopped"));
+        assert!(app.state().get(&bot.id).unwrap().queue.is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn stop_with_unknown_bot_does_nothing() {
+        let (app, dir) = test_app();
+        app.stop("missing");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn recover_marks_interrupted_message_done() {
+        let (app, dir) = test_app();
+        let bot = app.db.create_bot("Runner", "#fff", "circle", "claude", None, false);
+        let interrupted = app.db.add_message(&bot.id, "user", "do work", None, false, Some("running"));
+
+        let run = app.recover_pending();
+
+        assert!(run.is_empty(), "an interrupted run is reported, not re-run");
+        assert_eq!(app.db.message(interrupted.id).unwrap().status.as_deref(), Some("done"));
+        let last = app.db.last_message(&bot.id).unwrap();
+        assert!(last.error);
+        assert!(last.text.contains("interrupted"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn recover_requeues_queued_but_not_done() {
+        let (app, dir) = test_app();
+        let bot = app.db.create_bot("Runner", "#fff", "circle", "claude", None, false);
+        let queued = app.db.add_message(&bot.id, "user", "later", None, false, Some("queued"));
+        let done = app.db.add_message(&bot.id, "user", "earlier", None, false, Some("done"));
+
+        let run = app.recover_pending();
+
+        let ids: Vec<i64> = run.iter().map(|m| m.id).collect();
+        assert_eq!(ids, vec![queued.id], "only the queued message runs again");
+        assert!(!ids.contains(&done.id));
+        assert_eq!(app.db.message(queued.id).unwrap().status.as_deref(), Some("queued"));
+        // The interrupted path adds an error bubble; the queued one does not.
+        assert_eq!(app.db.messages(&bot.id, 10).len(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn recover_skips_messages_of_deleted_bots() {
+        let (app, dir) = test_app();
+        let bot = app.db.create_bot("Runner", "#fff", "circle", "claude", None, false);
+        let orphan = app.db.add_message(&bot.id, "user", "orphan", None, false, Some("queued"));
+        app.db.delete_bot(&bot.id);
+
+        let run = app.recover_pending();
+
+        assert!(run.is_empty());
+        // Deleted bot cascaded the message away.
+        assert!(app.db.message(orphan.id).is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

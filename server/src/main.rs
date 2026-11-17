@@ -18,7 +18,8 @@ use db::{BotPatch, Db};
 use runner::{App, Config};
 use serde_json::{json, Value};
 use std::convert::Infallible;
-use std::path::PathBuf;
+use std::os::fd::AsRawFd;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
@@ -45,6 +46,24 @@ pub fn random_bytes(n: usize) -> Vec<u8> {
 
 pub fn short_id() -> String {
     random_bytes(4).iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// Takes an exclusive advisory lock on `<data_dir>/botd.lock` and holds it for the
+/// whole process. Two instances on one data dir would double-run queued messages
+/// and fight over screens, so a second one exits here instead.
+fn lock_data_dir(data_dir: &FsPath) -> std::fs::File {
+    let path = data_dir.join("botd.lock");
+    let file = std::fs::OpenOptions::new().create(true).read(true).write(true).truncate(false).open(&path).unwrap_or_else(|e| {
+        eprintln!("Cannot open lock file {}: {e}", path.display());
+        std::process::exit(1);
+    });
+    // LOCK_NB: fail fast with a clear message instead of hanging on a live instance.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let e = std::io::Error::last_os_error();
+        eprintln!("Another botd is already using {} ({e}). Stop it first.", data_dir.display());
+        std::process::exit(1);
+    }
+    file
 }
 
 fn pick<'a>(a: &[&'a str]) -> &'a str {
@@ -77,7 +96,7 @@ async fn main() {
 
     let screens = screen::Screens::from_env(data_dir.join("screens"));
     let app = App::new(db, Config {
-        data_dir,
+        data_dir: data_dir.clone(),
         workspace,
         user_name: env("USER_NAME", "the user"),
         // `botctl` ships next to `botd`.
@@ -116,6 +135,14 @@ async fn main() {
         .route("/healthz", get(|| async { Json(json!({ "ok": true })) }))
         .with_state(app.clone());
 
+    // Own the port and the data dir before touching the queue: `recover` requeues
+    // messages, so a duplicate instance must fail before it can mutate anything.
+    let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await.unwrap_or_else(|e| {
+        eprintln!("Cannot listen on {host}:{port}: {e}");
+        std::process::exit(1);
+    });
+    let _lock = lock_data_dir(&data_dir);
+
     app.recover();
     cron::start(app.clone());
     if app.screens.is_some() {
@@ -128,12 +155,12 @@ async fn main() {
         });
     }
 
-    let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await.expect("bind");
     println!("Listening on http://{host}:{port}");
     println!("Harnesses on PATH: {}. Default: {}.", adapters::installed().join(", "), app.cfg.default_harness);
     println!("Screens: {}.", if app.screens.is_some() { "on" } else { "off (install Xvfb and openbox to turn them on)" });
 
-    // On SIGTERM/SIGINT: stop agents (queued work runs after restart), then exit.
+    // On SIGTERM/SIGINT: stop agents (queued work runs after restart), stop screens,
+    // then exit. `exit` skips destructors, so screens are killed here by hand.
     let shutdown_app = app.clone();
     tokio::spawn(async move {
         use tokio::signal::unix::{signal, SignalKind};
@@ -145,6 +172,9 @@ async fn main() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if let Some(screens) = &shutdown_app.screens {
+            screens.shutdown().await;
         }
         std::process::exit(0);
     });
@@ -230,7 +260,14 @@ async fn web(uri: axum::http::Uri) -> Response {
         _ => "text/css; charset=utf-8",
     };
     let body: Vec<u8> = match WEB_DIR.get().unwrap() {
-        Some(dir) => std::fs::read(dir.join(file)).unwrap_or_default(),
+        // A missing file in WEB_DIR is a 404, not an empty 200 that renders a blank page.
+        Some(dir) => match std::fs::read(dir.join(file)) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("WEB_DIR {}: {e}", dir.display());
+                return (StatusCode::NOT_FOUND, "Not found").into_response();
+            }
+        },
         None => match file {
             "index.html" => include_str!("../../web/index.html").into(),
             "app.js" => include_str!("../../web/app.js").into(),
@@ -418,11 +455,24 @@ async fn ask(State(app): State<AppState>, Json(v): Json<Value>) -> Result<String
     let from = v["from"].as_str().and_then(|id| app.db.bot(id)).ok_or_else(|| bad("Unknown asking Bot (BOT_ID)"))?;
     let to_key = v["to"].as_str().map(str::trim).unwrap_or("");
     let bots = app.db.bots();
-    let to = bots
-        .iter()
-        .find(|b| b.id == to_key)
-        .or_else(|| bots.iter().find(|b| b.name.eq_ignore_ascii_case(to_key)))
-        .ok_or_else(|| bad(format!("No Bot named \"{to_key}\". Run `botctl bots` to list them.")))?;
+    let to = match bots.iter().find(|b| b.id == to_key) {
+        Some(b) => b,
+        None => {
+            // Names are not unique: asking "Alice" with two Alices would silently pick one.
+            let matches: Vec<&db::Bot> = bots.iter().filter(|b| b.name.eq_ignore_ascii_case(to_key)).collect();
+            match matches.as_slice() {
+                [] => return Err(bad(format!("No Bot named \"{to_key}\". Run `botctl bots` to list them."))),
+                [one] => {
+                    let id = one.id.clone();
+                    bots.iter().find(|b| b.id == id).unwrap()
+                }
+                many => {
+                    let ids: Vec<&str> = many.iter().map(|b| b.id.as_str()).collect();
+                    return Err(bad(format!("\"{to_key}\" names more than one Bot ({}). Ask by id instead: run `botctl bots`.", ids.join(", "))));
+                }
+            }
+        }
+    };
     if to.id == from.id {
         return Err(bad("You can't ask yourself"));
     }

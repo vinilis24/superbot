@@ -43,6 +43,64 @@ fn spawn(cmd: &mut Command) -> std::io::Result<Child> {
     cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).spawn()
 }
 
+/// Removes what an Xvfb leaves behind: its display lock and socket.
+fn clean_display(n: u16) {
+    let _ = std::fs::remove_file(format!("/tmp/.X{n}-lock"));
+    let _ = std::fs::remove_file(format!("/tmp/.X11-unix/X{n}"));
+}
+
+/// Kills an Xvfb that still holds display `n`, so a new one can take the socket.
+/// A crashed or half-stopped screen would otherwise leave the display busy.
+async fn kill_stale_xvfb(n: u16) {
+    let Some(pid) = std::fs::read_to_string(format!("/tmp/.X{n}-lock")).ok().and_then(|t| t.trim().parse::<i32>().ok()) else {
+        return;
+    };
+    if pid <= 1 {
+        return;
+    }
+    // The lock's pid may belong to something else: only kill a process that is Xvfb on this display.
+    let Ok(cmd) = std::fs::read(format!("/proc/{pid}/cmdline")) else { return };
+    let display = format!(":{n}");
+    let args: Vec<String> = String::from_utf8_lossy(&cmd).split('\0').map(str::to_string).collect();
+    if !args.iter().any(|a| a.contains("Xvfb")) || !args.contains(&display) {
+        return;
+    }
+    unsafe { libc::kill(pid, libc::SIGTERM) };
+    for _ in 0..20 {
+        if !Path::new(&format!("/proc/{pid}")).exists() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..20 {
+        if !Path::new(&format!("/proc/{pid}")).exists() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Kills and reaps a screen's processes, waiting at most `timeout` in total.
+async fn kill_and_wait(procs: &mut [Child], timeout: Duration) {
+    for c in procs.iter_mut() {
+        let _ = c.start_kill();
+    }
+    let deadline = Instant::now() + timeout;
+    loop {
+        let mut all_done = true;
+        for c in procs.iter_mut() {
+            if matches!(c.try_wait(), Ok(None)) {
+                all_done = false;
+            }
+        }
+        if all_done || Instant::now() >= deadline {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// The agent-browser session that belongs to a Bot.
 pub fn browser_session(bot_id: &str) -> String {
     format!("bot-{bot_id}")
@@ -114,8 +172,8 @@ impl Screens {
 
         // Leftovers from a crash would stop Xvfb from starting.
         let sock = PathBuf::from(format!("/tmp/.X11-unix/X{n}"));
-        let _ = std::fs::remove_file(format!("/tmp/.X{n}-lock"));
-        let _ = std::fs::remove_file(&sock);
+        kill_stale_xvfb(n).await;
+        clean_display(n);
         s.procs.push(spawn(Command::new("Xvfb").args([&display, "-screen", "0", &format!("{}x24", self.size), "-nolisten", "tcp"]))?);
         for _ in 0..50 {
             if sock.exists() {
@@ -161,15 +219,28 @@ impl Screens {
             stop(bot_id, s).await;
         }
     }
+
+    /// Stops every screen on shutdown. `process::exit` skips destructors, so the signal
+    /// handler must kill and reap the children itself; otherwise Xvfb, D-Bus, Openbox,
+    /// and voxl survive as orphans holding displays and ports.
+    pub async fn shutdown(&self) {
+        let mut live = self.live.lock().await;
+        for (_, mut s) in live.drain() {
+            kill_and_wait(&mut s.procs, Duration::from_secs(3)).await;
+            clean_display(self.base + s.slot);
+        }
+    }
 }
 
 /// Closes the Bot's browser cleanly (so its profile saves), then kills the screen.
-async fn stop(bot_id: &str, s: Screen) {
+async fn stop(bot_id: &str, mut s: Screen) {
     if on_path("agent-browser") {
         let close = Command::new("agent-browser").args(["--session", &browser_session(bot_id), "close"]).stdin(Stdio::null()).output();
         let _ = tokio::time::timeout(Duration::from_secs(10), close).await;
     }
-    drop(s); // kill_on_drop stops Xvfb, D-Bus, Openbox, and voxl
+    // Wait for the children instead of dropping them: a still-running Xvfb would keep
+    // the display and its socket, and the next screen on this slot would fail to start.
+    kill_and_wait(&mut s.procs, Duration::from_secs(3)).await;
 }
 
 /// Environment for a Bot's harness, so its tools draw on its own screen and keep

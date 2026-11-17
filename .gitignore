@@ -44,3 +44,6 @@ test-results/
 .vscode/*
 !.vscode/extensions.json
 *.swp
+
+# isolated parallel-work lanes
+.worktrees/
