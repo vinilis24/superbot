@@ -34,7 +34,7 @@ You message Bots like teammates. They finish work end to end and only ask you wh
 - **Memory that grows**: Bots save your rules and preferences as plain files. Ask "What do you remember about me?"
 - **Routines**: run a Bot on a schedule. Bots create their own cron jobs.
 - **Bot to Bot**: Bots ask each other for help and pass work along.
-- **Any agent**: Claude Code, Codex, Pi, or oh-my-pi, through one small adapter each.
+- **Any agent**: Claude Code, Codex, Pi, oh-my-pi, or OpenCode, through one small adapter each.
 - **Approvals** *(soon)*: Bots pause and ask before risky actions.
 
 Also planned: skills and Slack.
@@ -67,7 +67,7 @@ set -a; . ./.env; set +a
 ./target/release/botd
 ```
 
-Then open the web app and say hi to SuperBot. Install and log in to the agent CLIs you want (`claude`, `codex`, `pi`) as the same user that runs `botd`.
+Then open the web app and say hi to SuperBot. Install and log in to the agent CLIs you want (`claude`, `codex`, `pi`, `opencode`) as the same user that runs `botd`.
 
 Deploying on a VPS: see [Backend](docs/backend.md).
 

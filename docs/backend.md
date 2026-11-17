@@ -4,7 +4,7 @@ One Rust binary, `botd`. It serves the web app, stores everything in SQLite, and
 
 ## How it works
 
-- **Bots** live in SQLite. Each Bot has a harness (`claude`, `codex`, `pi`, or `omp`), an optional model, and a harness session id.
+- **Bots** live in SQLite. Each Bot has a harness (`claude`, `codex`, `pi`, `omp`, or `opencode`), an optional model, and a harness session id.
 - **A message** is queued. Each Bot runs one task at a time, in order. Different Bots run in parallel.
 - **A run** spawns the harness CLI in the shared workspace, streams its JSON events, and saves each text block as a chat bubble.
 - **Live updates** go to the browser over one Server-Sent Events stream: new messages, streaming text, and what the Bot is doing ("Running: ls").
@@ -26,8 +26,9 @@ Each adapter is one file in `server/src/adapters/`. It builds the command line a
 - **Codex**: `codex exec --json`, then `codex exec resume <id>`. Instructions via `-c developer_instructions=...`. Codex only reads them when a session starts, so later memory edits reach it through the memory file.
 - **Pi**: `pi --mode json --session-dir <bot dir> --session-id <id>`. System prompt via `--append-system-prompt`.
 - **omp**: `omp -p --mode json --session-dir <bot dir>`, resumed with `-r <id>`. System prompt via `--append-system-prompt`, fresh every run. Models and thinking levels come from `omp models --json`.
+- **OpenCode**: `opencode run --format json --standalone --auto`, resumed with `--session <id>`. No system-prompt flag exists, so the Bot's system prompt is prepended to the user message. If a Bot has a model and effort, they are passed as `--model provider/model#effort`. Models come from `opencode models`.
 
-All four run with permission prompts off (`--dangerously-skip-permissions` and equivalents). The server is the computer, so treat it that way. Approvals are not built yet.
+All five run with permission prompts off (`--dangerously-skip-permissions` and equivalents). The server is the computer, so treat it that way. Approvals are not built yet.
 
 Add a harness: write one adapter file and add it to `get()` and `NAMES` in `adapters/mod.rs`.
 
@@ -46,7 +47,7 @@ Settings are in [.env.example](../.env.example). Keep `botctl` next to `botd`: t
 
 - Keep your server IP, domain, and secrets out of this repo. They go in `.env` on the server.
 
-- Install the harness CLIs you want and log them in **as the user that runs `botd`**: `claude` (then `claude login` or `ANTHROPIC_API_KEY`), `codex` (`codex login` or `OPENAI_API_KEY`), `pi` (provider API key, e.g. `OPENROUTER_API_KEY`). Their env vars pass through to the Bots.
+- Install the harness CLIs you want and log them in **as the user that runs `botd`**: `claude` (then `claude login` or `ANTHROPIC_API_KEY`), `codex` (`codex login` or `OPENAI_API_KEY`), `pi` (provider API key, e.g. `OPENROUTER_API_KEY`), `opencode` (`opencode auth login`). Their env vars pass through to the Bots.
 - Run `botd` as a normal user, not root. Claude Code refuses to skip permissions as root.
 - Run it under systemd with `Restart=always`. It shuts down cleanly on SIGTERM.
 - Put HTTPS in front (e.g. Caddy) and set `AUTH_PASSWORD` and `HOST=0.0.0.0`, or keep `HOST=127.0.0.1` behind the proxy. The browser logs in with any username and that password.
@@ -64,7 +65,7 @@ All JSON. Browser auth: HTTP Basic with `AUTH_PASSWORD`.
 - `GET /api/events`: SSE stream (`message`, `draft`, `status`, `bot`, `botDeleted`, `resync`)
 - `POST /api/bots` `{name, harness?, model?, color?, shape?}`
 - `PATCH /api/bots/:id` `{name?, hidden?, harness?, model?, effort?}`, `DELETE /api/bots/:id`
-- `GET /api/harnesses/:name/models`: models and reasoning efforts the harness offers (Claude Code: aliases; Codex: `codex debug models`; Pi: `pi --list-models`)
+- `GET /api/harnesses/:name/models`: models and reasoning efforts the harness offers (Claude Code: aliases; Codex: `codex debug models`; Pi: `pi --list-models`; OpenCode: `opencode models`)
 - `GET|POST /api/bots/:id/messages` `{text, answer?: {messageId, option}}`
 - `POST /api/bots/:id/read`, `POST /api/bots/:id/stop`
 - `GET|POST /api/bots/:id/routines` `{name, cron, instruction}`
