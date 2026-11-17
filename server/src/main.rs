@@ -319,6 +319,18 @@ fn need_bot(app: &App, id: &str) -> Res<db::Bot> {
     app.db.bot(id).ok_or_else(|| not_found("Bot"))
 }
 
+/// Rejects a model its harness doesn't offer. No model = the harness default.
+/// Exact ids and aliases only: a stale or typed model must not run as another.
+fn check_model(harness: &str, model: Option<&str>) -> Res<()> {
+    if model.is_none() || adapters::get(harness).is_none() {
+        return Ok(());
+    }
+    match runner::model_problem(harness, model, &adapters::models(harness)) {
+        Some(msg) => Err(bad(msg)),
+        None => Ok(()),
+    }
+}
+
 fn bot_patch(v: &Value) -> Res<BotPatch> {
     let mut p = BotPatch::default();
     if let Some(n) = v["name"].as_str().map(str::trim).filter(|n| !n.is_empty()) {
@@ -360,6 +372,7 @@ async fn create_bot(State(app): State<AppState>, Json(v): Json<Value>) -> Res<(S
     let p = bot_patch(&v)?;
     let name = p.name.ok_or_else(|| bad("Name is required"))?;
     let harness = p.harness.unwrap_or_else(|| app.cfg.default_harness.clone());
+    check_model(&harness, p.model.as_ref().and_then(|m| m.as_deref()))?;
     let bot = app.db.create_bot(
         &name,
         p.color.as_deref().unwrap_or(pick(&COLORS)),
@@ -376,6 +389,13 @@ async fn create_bot(State(app): State<AppState>, Json(v): Json<Value>) -> Res<(S
 async fn update_bot(State(app): State<AppState>, Path(id): Path<String>, Json(v): Json<Value>) -> Res {
     let bot = need_bot(&app, &id)?;
     let mut p = bot_patch(&v)?;
+    // Validate the model this patch leaves in place, before saving anything.
+    let harness = p.harness.clone().unwrap_or_else(|| bot.harness.clone());
+    let model = match &p.model {
+        Some(m) => m.as_deref(),
+        None => bot.model.as_deref(),
+    };
+    check_model(&harness, model)?;
     if p.harness.as_ref().is_some_and(|h| *h != bot.harness) {
         p.session_id = Some(None); // sessions don't carry across harnesses
     }

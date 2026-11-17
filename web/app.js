@@ -260,10 +260,21 @@ async function renderModelBar() {
   const models = [{ id: "", label: "Default model", efforts: all }, ...list];
   // A Bot saved with an alias (e.g. "opus") shows as its exact model.
   const isCurrent = (m) => m.id === (b.model || "") || (b.model && m.aliases?.includes(b.model));
-  if (b.model && !list.some(isCurrent)) models.push({ id: b.model, label: b.model, efforts: all });
+  // A saved model the harness no longer offers is not silently swapped or hidden:
+  // it stays visible, disabled and selected, until the user picks a valid one.
+  const missing = Boolean(b.model) && !list.some(isCurrent);
+  if (missing) models.push({ id: b.model, label: `⚠ ${b.model} (unavailable — choose another)`, efforts: [], off: true });
   const current = models.find(isCurrent);
   $("model-select").innerHTML = models.map((m) =>
-    `<option value="${esc(m.id)}" ${m === current ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+    `<option value="${esc(m.id)}" ${m === current ? "selected" : ""} ${m.off ? 'disabled aria-disabled="true"' : ""}>${esc(m.label)}</option>`).join("");
+  $("model-select").title = missing
+    ? `Saved model "${b.model}" is not available for this harness. Choose another model.`
+    : "Model";
+  $("model-select").classList.toggle("missing", missing);
+  $("model-warn").textContent = missing
+    ? `This Bot's saved model “${b.model}” is not available here. Choose another model.`
+    : "";
+  $("model-warn").hidden = !missing;
   $("effort-select").innerHTML = ["", ...current.efforts].map((e) =>
     `<option value="${esc(e)}" ${e === (b.effort || "") ? "selected" : ""}>${e ? cap(e) : "Default effort"}</option>`).join("");
   $("effort-select").hidden = !current.efforts.length;

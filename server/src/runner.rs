@@ -169,6 +169,15 @@ impl App {
         if adapters::get(&bot.harness).is_none() {
             return self.say(&bot.id, &format!("Unknown harness \"{}\".", bot.harness), true);
         }
+        // A saved model may have been removed from the harness since it was picked.
+        // Verify before spawning, so it can't run as a different model silently.
+        if let Some(model) = bot.model.as_deref() {
+            let harness = bot.harness.clone();
+            let list = tokio::task::spawn_blocking(move || adapters::models(&harness)).await.unwrap_or_default();
+            if let Some(msg) = model_problem(&bot.harness, Some(model), &list) {
+                return self.say(&bot.id, &format!("{msg} Pick another model in this Bot's settings."), true);
+            }
+        }
         self.init_bot_files(&bot);
         self.db.set_status(msg.id, "running");
         let from = || msg.from_bot.as_deref().and_then(|id| self.db.bot(id)).map(|b| format!("{} (id {})", b.name, b.id)).unwrap_or("another Bot".into());
@@ -499,6 +508,23 @@ fn errors_already_said(errors: &[String], said: &[String]) -> bool {
     })
 }
 
+/// Why a Bot's model can't run on its harness, if it can't.
+/// A Bot with no model uses the harness default: always fine. A model is valid
+/// only as an exact id or alias from that harness's own list: a stale or
+/// hand-typed name must never run as a different model silently.
+pub(crate) fn model_problem(harness: &str, model: Option<&str>, list: &[adapters::ModelOption]) -> Option<String> {
+    let model = model?;
+    if list.is_empty() {
+        return Some(format!("Cannot verify models for {harness}; its model list is empty. Try again later."));
+    }
+    let offered = list.iter().any(|o| o.id == model || o.aliases.iter().any(|a| a == model));
+    (!offered).then(|| {
+        let ids: Vec<&str> = list.iter().take(8).map(|o| o.id.as_str()).collect();
+        let more = if list.len() > ids.len() { ", …" } else { "" };
+        format!("Model \"{model}\" is not offered by {harness}. Choose one from its model list ({}{more}).", ids.join(", "))
+    })
+}
+
 fn tool_label(name: &str, detail: &str) -> String {
     let n = name.to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
@@ -729,5 +755,44 @@ mod tests {
         // Deleted bot cascaded the message away.
         assert!(app.db.message(orphan.id).is_none());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn opt(id: &str, aliases: &[&str]) -> adapters::ModelOption {
+        adapters::ModelOption {
+            id: id.into(),
+            label: id.into(),
+            efforts: Vec::new(),
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn model_unset_is_always_fine() {
+        let list = vec![opt("sonnet", &[])];
+        assert_eq!(model_problem("claude", None, &list), None);
+        // Even an empty (unverifiable) list is fine with no model set.
+        assert_eq!(model_problem("claude", None, &[]), None);
+    }
+
+    #[test]
+    fn model_accepts_exact_id_and_alias() {
+        let list = vec![opt("claude-sonnet-4", &["sonnet"]), opt("claude-opus-4", &["opus"])];
+        assert_eq!(model_problem("claude", Some("claude-opus-4"), &list), None);
+        assert_eq!(model_problem("claude", Some("opus"), &list), None);
+    }
+
+    #[test]
+    fn model_rejects_unknown_name() {
+        let list = vec![opt("claude-sonnet-4", &["sonnet"])];
+        let msg = model_problem("claude", Some("gpt-5"), &list).unwrap();
+        assert!(msg.contains("gpt-5") && msg.contains("claude"));
+        assert!(msg.contains("claude-sonnet-4"), "message lists the choices");
+    }
+
+    #[test]
+    fn model_rejects_when_list_is_empty() {
+        // Never allow an unverifiable model.
+        let msg = model_problem("codex", Some("gpt-5"), &[]).unwrap();
+        assert!(msg.contains("Cannot verify") && msg.contains("codex"));
     }
 }
