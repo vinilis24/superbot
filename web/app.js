@@ -419,12 +419,32 @@ $("primary-bot").addEventListener("click", () => {
   open(primary()?.id);
 });
 
+// Over plain HTTP (e.g. a Tailscale hostname) navigator.clipboard is undefined.
+function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
+  } else {
+    legacyCopy(text);
+  }
+}
+
+function legacyCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  ta.remove();
+}
+
 $("messages").addEventListener("click", (e) => {
   if (e.target.closest("#stop")) return void api("POST", `/api/bots/${activeId}/stop`).catch(() => {});
   const copy = e.target.closest('[data-act="copy"]');
   if (copy) {
     const m = messages[activeId]?.find((x) => x.id === +copy.closest(".msg-row").dataset.id);
-    if (m) navigator.clipboard.writeText(m.text);
+    if (m) copyText(m.text);
     return;
   }
   if (e.target.closest(".open-screen")) return void openScreen();
